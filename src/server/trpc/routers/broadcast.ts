@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "../root";
 import { TRPCError } from "@trpc/server";
+import { inngest } from "@/server/inngest/client";
 
 export const broadcastRouter = createTRPCRouter({
   /** List broadcasts for the current user. */
@@ -40,6 +41,80 @@ export const broadcastRouter = createTRPCRouter({
       }
 
       return { items, nextCursor };
+    }),
+
+  /** Get broadcast stats for the current user. */
+  stats: protectedProcedure.query(async ({ ctx }) => {
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    const [total, sent, scheduled, failed] = await Promise.all([
+      ctx.prisma.broadcast.count({ where: { userId: ctx.user.id } }),
+      ctx.prisma.broadcast.count({
+        where: { userId: ctx.user.id, status: "COMPLETED" },
+      }),
+      ctx.prisma.broadcast.count({
+        where: { userId: ctx.user.id, status: "SCHEDULED" },
+      }),
+      ctx.prisma.broadcast.count({
+        where: { userId: ctx.user.id, status: "FAILED" },
+      }),
+    ]);
+
+    // Calculate delivery rate
+    const completedBroadcasts = await ctx.prisma.broadcast.findMany({
+      where: { userId: ctx.user.id, status: "COMPLETED" },
+      select: { sentCount: true, totalRecipients: true },
+    });
+
+    const totalSent = completedBroadcasts.reduce(
+      (sum, b) => sum + b.sentCount,
+      0
+    );
+    const totalRecipients = completedBroadcasts.reduce(
+      (sum, b) => sum + b.totalRecipients,
+      0
+    );
+    const deliveryRate =
+      totalRecipients > 0
+        ? Math.round((totalSent / totalRecipients) * 100)
+        : 0;
+
+    return { total, sent, scheduled, failed, deliveryRate };
+  }),
+
+  /** Get detailed analytics for a specific broadcast. */
+  analytics: protectedProcedure
+    .input(z.object({ broadcastId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const broadcast = await ctx.prisma.broadcast.findFirst({
+        where: { id: input.broadcastId, userId: ctx.user.id },
+        include: {
+          recipients: {
+            include: { contact: { select: { name: true, phoneNumber: true } } },
+          },
+          account: { select: { instanceName: true, phoneNumber: true } },
+        },
+      });
+
+      if (!broadcast) {
+        throw new TRPCError({ code: "NOT_FOUND" });
+      }
+
+      const recipientStats = {
+        pending: broadcast.recipients.filter((r) => r.status === "PENDING")
+          .length,
+        sent: broadcast.recipients.filter((r) => r.status === "SENT").length,
+        delivered: broadcast.recipients.filter((r) => r.status === "DELIVERED")
+          .length,
+        failed: broadcast.recipients.filter((r) => r.status === "FAILED")
+          .length,
+        optedOut: broadcast.recipients.filter((r) => r.status === "OPTED_OUT")
+          .length,
+      };
+
+      return { broadcast, recipientStats };
     }),
 
   /** Create a new broadcast. */
@@ -94,7 +169,23 @@ export const broadcastRouter = createTRPCRouter({
         });
       }
 
-      return ctx.prisma.broadcast.create({
+      // Get contacts for the broadcast
+      const contactFilter: Record<string, unknown> = {
+        userId: ctx.user.id,
+        accountId: input.accountId,
+        isOptedOut: false, // Respect opt-out
+      };
+
+      if (input.listId) {
+        contactFilter.lists = { some: { listId: input.listId } };
+      }
+
+      const contacts = await ctx.prisma.contact.findMany({
+        where: contactFilter,
+        select: { id: true },
+      });
+
+      const broadcast = await ctx.prisma.broadcast.create({
         data: {
           userId: ctx.user.id,
           accountId: input.accountId,
@@ -107,7 +198,106 @@ export const broadcastRouter = createTRPCRouter({
             ? new Date(input.scheduledAt)
             : undefined,
           status: input.scheduledAt ? "SCHEDULED" : "DRAFT",
+          totalRecipients: contacts.length,
+          recipients: {
+            create: contacts.map((c) => ({
+              contactId: c.id,
+              status: "PENDING",
+            })),
+          },
         },
+      });
+
+      return broadcast;
+    }),
+
+  /** Send a broadcast (trigger the Inngest job). */
+  send: protectedProcedure
+    .input(z.object({ broadcastId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const broadcast = await ctx.prisma.broadcast.findFirst({
+        where: {
+          id: input.broadcastId,
+          userId: ctx.user.id,
+          status: { in: ["DRAFT", "SCHEDULED"] },
+        },
+      });
+
+      if (!broadcast) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Broadcast not found or already sent.",
+        });
+      }
+
+      // Trigger the Inngest job
+      await inngest.send({
+        name: "broadcast/send",
+        data: { broadcastId: input.broadcastId },
+      });
+
+      return { success: true, broadcastId: input.broadcastId };
+    }),
+
+  /** Cancel a scheduled broadcast. */
+  cancel: protectedProcedure
+    .input(z.object({ broadcastId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const broadcast = await ctx.prisma.broadcast.findFirst({
+        where: {
+          id: input.broadcastId,
+          userId: ctx.user.id,
+          status: { in: ["DRAFT", "SCHEDULED"] },
+        },
+      });
+
+      if (!broadcast) {
+        throw new TRPCError({ code: "NOT_FOUND" });
+      }
+
+      return ctx.prisma.broadcast.update({
+        where: { id: input.broadcastId },
+        data: { status: "CANCELLED" },
+      });
+    }),
+
+  /** Handle opt-out for a contact from broadcasts. */
+  optOut: protectedProcedure
+    .input(
+      z.object({
+        contactId: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const contact = await ctx.prisma.contact.findFirst({
+        where: { id: input.contactId, userId: ctx.user.id },
+      });
+
+      if (!contact) {
+        throw new TRPCError({ code: "NOT_FOUND" });
+      }
+
+      return ctx.prisma.contact.update({
+        where: { id: input.contactId },
+        data: { isOptedOut: true },
+      });
+    }),
+
+  /** Opt a contact back into broadcasts. */
+  optIn: protectedProcedure
+    .input(z.object({ contactId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const contact = await ctx.prisma.contact.findFirst({
+        where: { id: input.contactId, userId: ctx.user.id },
+      });
+
+      if (!contact) {
+        throw new TRPCError({ code: "NOT_FOUND" });
+      }
+
+      return ctx.prisma.contact.update({
+        where: { id: input.contactId },
+        data: { isOptedOut: false },
       });
     }),
 });

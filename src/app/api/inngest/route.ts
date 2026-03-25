@@ -4,6 +4,7 @@ import { scheduleStatusFunction } from "@/server/inngest/functions/schedule-stat
 import { sendBroadcastFunction } from "@/server/inngest/functions/send-broadcast";
 import { processPayoutFunction } from "@/server/inngest/functions/process-payout";
 import { dailyAnalyticsFunction } from "@/server/inngest/functions/daily-analytics";
+import { releaseCommissionsFunction } from "@/server/inngest/functions/release-commissions";
 
 /**
  * Inngest API route handler.
@@ -16,5 +17,6 @@ export const { GET, POST, PUT } = serve({
     sendBroadcastFunction,
     processPayoutFunction,
     dailyAnalyticsFunction,
+    releaseCommissionsFunction,
   ],
 });

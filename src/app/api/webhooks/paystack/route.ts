@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
+import { REFERRAL_COMMISSION_PERCENT } from "@/lib/constants";
 
 /**
  * Paystack webhook handler.
- * Handles subscription events and transfer status updates.
+ * Handles subscription events, ad booking payments, and transfer status updates.
  */
 export async function POST(req: Request) {
   const body = await req.text();
@@ -79,15 +80,61 @@ async function handleSubscriptionCreate(data: Record<string, unknown>) {
 
 async function handleChargeSuccess(data: Record<string, unknown>) {
   const reference = data.reference as string;
+  const metadata = data.metadata as Record<string, unknown> | undefined;
 
-  if (reference) {
-    await prisma.payment.updateMany({
+  if (!reference) return;
+
+  // Check if this is an ad booking payment
+  if (metadata?.type === "ad_booking") {
+    await prisma.adBooking.updateMany({
       where: { paystackReference: reference },
       data: {
-        status: "SUCCESS",
+        status: "PAID",
         paidAt: new Date(),
       },
     });
+    return;
+  }
+
+  // Subscription payment
+  await prisma.payment.updateMany({
+    where: { paystackReference: reference },
+    data: {
+      status: "SUCCESS",
+      paidAt: new Date(),
+    },
+  });
+
+  // Check if this payment is from a referred user and create commission
+  if (metadata?.userId) {
+    const userId = metadata.userId as string;
+    const amount = data.amount as number;
+
+    const referral = await prisma.referral.findUnique({
+      where: { referredUserId: userId },
+    });
+
+    if (referral && referral.status !== "CHURNED") {
+      // Calculate 25% commission
+      const commissionAmount = Math.floor(
+        (amount * REFERRAL_COMMISSION_PERCENT) / 100
+      );
+
+      // Update referral status to subscribed
+      await prisma.referral.update({
+        where: { id: referral.id },
+        data: { status: "SUBSCRIBED" },
+      });
+
+      // Create pending commission
+      await prisma.commission.create({
+        data: {
+          referralId: referral.id,
+          amount: commissionAmount,
+          status: "PENDING",
+        },
+      });
+    }
   }
 }
 
@@ -95,13 +142,25 @@ async function handleSubscriptionDisable(data: Record<string, unknown>) {
   const subscriptionCode = data.subscription_code as string;
 
   if (subscriptionCode) {
-    await prisma.subscription.updateMany({
+    const subscription = await prisma.subscription.findFirst({
       where: { paystackSubscriptionCode: subscriptionCode },
-      data: {
-        status: "CANCELLED",
-        cancelledAt: new Date(),
-      },
     });
+
+    if (subscription) {
+      await prisma.subscription.updateMany({
+        where: { paystackSubscriptionCode: subscriptionCode },
+        data: {
+          status: "CANCELLED",
+          cancelledAt: new Date(),
+        },
+      });
+
+      // Mark any referral as churned
+      await prisma.referral.updateMany({
+        where: { referredUserId: subscription.userId, status: "SUBSCRIBED" },
+        data: { status: "CHURNED" },
+      });
+    }
   }
 }
 
@@ -123,12 +182,22 @@ async function handleTransferFailed(data: Record<string, unknown>) {
   const reference = data.reference as string;
 
   if (reference) {
-    await prisma.withdrawal.updateMany({
+    const withdrawal = await prisma.withdrawal.findFirst({
       where: { paystackReference: reference },
-      data: {
-        status: "FAILED",
-        failedReason: (data.reason as string) ?? "Transfer failed",
-      },
     });
+
+    if (withdrawal) {
+      await prisma.withdrawal.update({
+        where: { id: withdrawal.id },
+        data: {
+          status: "FAILED",
+          failedReason: (data.reason as string) ?? "Transfer failed",
+        },
+      });
+
+      // Restore commissions back to AVAILABLE
+      // The withdrawal amount should be converted back to available commissions
+      // This is handled by the next commission release cycle
+    }
   }
 }

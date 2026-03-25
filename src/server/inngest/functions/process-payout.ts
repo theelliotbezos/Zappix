@@ -12,8 +12,8 @@ export const processPayoutFunction = inngest.createFunction(
     id: "payout-process",
     name: "Process Referral Payout",
     retries: 2,
+    triggers: [{ event: "payout/process" }],
   },
-  { event: "payout/process" },
   async ({ event, step }) => {
     const { withdrawalId } = event.data as { withdrawalId: string };
 

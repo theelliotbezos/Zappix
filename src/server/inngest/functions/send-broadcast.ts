@@ -11,9 +11,9 @@ export const sendBroadcastFunction = inngest.createFunction(
   {
     id: "broadcast-send",
     name: "Send Broadcast",
-    retries: 1, // Broadcasts handle their own per-message retries
+    retries: 1,
+    triggers: [{ event: "broadcast/send" }],
   },
-  { event: "broadcast/send" },
   async ({ event, step }) => {
     const { broadcastId } = event.data as { broadcastId: string };
 

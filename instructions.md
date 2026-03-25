@@ -170,14 +170,32 @@ cp .env.example .env.local
 
 ## Step 11: Deploy to Render
 
+### Option A: Using render.yaml (Recommended)
+
+The repository includes a `render.yaml` blueprint that automatically configures the build:
+
+1. Go to [render.com](https://render.com) and create a new Web Service
+2. Connect your GitHub repository (digimajextensions/Zappix)
+3. Render will auto-detect the `render.yaml` and configure:
+   - **Build Command**: `npm ci && npx prisma generate && npm run build`
+   - **Start Command**: `npm start`
+   - **Node Version**: 22
+4. Add ALL environment variables from `.env.example` (filled with real values)
+5. Deploy
+
+### Option B: Manual Configuration
+
 1. Go to [render.com](https://render.com) and create a new Web Service
 2. Connect your GitHub repository (digimajextensions/Zappix)
 3. Configure:
-   - **Build Command**: `npm run build`
+   - **Build Command**: `npm ci && npx prisma generate && npm run build`
    - **Start Command**: `npm start`
-   - **Node Version**: 18+
+   - **Node Version**: 22 (set via `NODE_VERSION` env var)
 4. Add ALL environment variables from `.env.example` (filled with real values)
 5. Deploy
+
+> **Important**: The build command must include `npm ci` to install dependencies
+> before running `next build`. Without it, the `next` command will not be found.
 
 ---
 
@@ -200,7 +218,29 @@ npx prisma db seed
 
 ---
 
-## Step 14: Verify Everything Works
+## Step 14: Set Up Cron Jobs
+
+The following background jobs run automatically via Inngest:
+
+| Job | Schedule | Purpose |
+|-----|----------|---------|
+| Daily Analytics | 1 AM daily | Aggregate analytics snapshots per user |
+| Commission Release | 2 AM daily | Release held commissions after 30-day period |
+| Status Posting | Event-driven | Post scheduled WhatsApp statuses |
+| Broadcast Sending | Event-driven | Send broadcasts with throttling |
+| Payout Processing | Event-driven | Process bank transfer payouts |
+
+As a backup, commission release also has a cron endpoint at:
+```
+GET /api/cron/release-commissions
+Authorization: Bearer <INNGEST_SIGNING_KEY>
+```
+
+You can set up an external cron service (e.g., Upstash QStash) to hit this endpoint daily.
+
+---
+
+## Step 15: Verify Everything Works
 
 1. Visit your domain and check the landing page renders
 2. Check the features, pricing, blog, and legal pages
@@ -208,9 +248,46 @@ npx prisma db seed
 4. Complete the onboarding flow
 5. Connect a WhatsApp number via QR code
 6. Send a test status post
-7. Process a test payment via Paystack
-8. Verify Inngest dashboard shows registered functions
-9. Check Sanity Studio can create blog posts
+7. Create and send a test broadcast
+8. Import contacts via CSV
+9. Process a test payment via Paystack
+10. Test the referral system with a referral code
+11. Create an ad slot and test the public booking page
+12. Verify chatbot responds to incoming messages
+13. Verify Inngest dashboard shows registered functions
+14. Check Sanity Studio can create blog posts
+15. Test team member invite email
+
+---
+
+## Architecture Overview
+
+### Backend Features
+
+| Feature | Technology | Status |
+|---------|-----------|--------|
+| Paystack Checkout | `billing.initializeCheckout` tRPC mutation | Implemented |
+| Paystack Webhook | `/api/webhooks/paystack` route | Implemented |
+| Bank Verification | Paystack Resolve API via `billing.addBankAccount` | Implemented |
+| Status Scheduling | Inngest `status/post` event + Evolution API | Implemented |
+| Media Upload | Cloudinary via `status.uploadMedia` tRPC mutation | Implemented |
+| Broadcast Sending | Inngest `broadcast/send` event + throttling | Implemented |
+| Opt-out Handling | `broadcast.optOut` / `broadcast.optIn` mutations | Implemented |
+| CSV Import | `contact.importCsv` tRPC mutation with upsert | Implemented |
+| Tag System | `contact.createTag` / `contact.assignTags` mutations | Implemented |
+| List Management | `contact.createList` / `contact.addToList` mutations | Implemented |
+| Analytics Export | `analytics.exportCsv` / `analytics.exportPdf` queries | Implemented |
+| Referral Tracking | Paystack webhook + commission calculation | Implemented |
+| Commission Release | Inngest cron + `/api/cron/release-commissions` | Implemented |
+| Payout Processing | Inngest `payout/process` + Paystack Transfers | Implemented |
+| Connection Monitor | `whatsapp.connectionStatus` with DB sync | Implemented |
+| Ad Booking Page | `/ads/[userId]` public page + Paystack payment | Implemented |
+| Booking Management | `adSlot.approveBooking` / `rejectBooking` / `markDelivered` | Implemented |
+| Chatbot Handler | Evolution webhook -> FAQ matching + flow routing | Implemented |
+| Menu Bot Handler | Evolution webhook -> numbered menu responses | Implemented |
+| Team Invites | `team.invite` mutation + Resend email | Implemented |
+| Profile Update | `user.updateProfile` tRPC mutation | Implemented |
+| Usage Stats | `user.usageStats` query with plan limits | Implemented |
 
 ---
 
@@ -218,6 +295,7 @@ npx prisma db seed
 
 | Issue | Solution |
 |-------|---------|
+| `next: not found` on Render | Ensure build command is `npm ci && npx prisma generate && npm run build` |
 | Database connection fails | Ensure you are using the pooled URL with `?sslmode=require` |
 | Clerk webhook 400 errors | Verify CLERK_WEBHOOK_SECRET matches the one in Clerk dashboard |
 | Evolution API not responding | Check Railway logs, ensure container is running on port 8080 |
@@ -226,6 +304,9 @@ npx prisma db seed
 | Inngest functions not triggering | Verify INNGEST_SIGNING_KEY and check Inngest dashboard |
 | Sanity blog empty | Create content in Sanity Studio, check SANITY_API_TOKEN permissions |
 | Render cold start slow | Set up health check pings via Upstash QStash to keep instance warm |
+| Team invite email not sent | Verify RESEND_API_KEY and domain verification in Resend dashboard |
+| CSV import failing | Check file encoding (UTF-8), ensure phone numbers are valid format |
+| Commission not releasing | Verify Inngest cron job is registered, check commission hold period |
 
 ---
 
