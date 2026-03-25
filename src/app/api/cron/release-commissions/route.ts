@@ -4,7 +4,8 @@ import { COMMISSION_HOLD_DAYS } from "@/lib/constants";
 
 /**
  * Cron job: Release commissions after the hold period.
- * Run monthly to move PENDING commissions to AVAILABLE.
+ * Run daily to move PENDING commissions to AVAILABLE.
+ * Also handled by Inngest function as backup.
  */
 export async function GET(req: Request) {
   // Verify cron secret (use a header or query param)
@@ -16,19 +17,44 @@ export async function GET(req: Request) {
   const holdDate = new Date();
   holdDate.setDate(holdDate.getDate() - COMMISSION_HOLD_DAYS);
 
-  const result = await prisma.commission.updateMany({
+  // Only release commissions where the referred user is still subscribed
+  const pendingCommissions = await prisma.commission.findMany({
     where: {
       status: "PENDING",
       createdAt: { lte: holdDate },
     },
-    data: {
-      status: "AVAILABLE",
-      releasedAt: new Date(),
+    include: {
+      referral: {
+        select: { status: true },
+      },
     },
   });
 
+  let released = 0;
+  let voided = 0;
+
+  for (const commission of pendingCommissions) {
+    if (commission.referral.status === "SUBSCRIBED") {
+      await prisma.commission.update({
+        where: { id: commission.id },
+        data: {
+          status: "AVAILABLE",
+          releasedAt: new Date(),
+        },
+      });
+      released++;
+    } else if (commission.referral.status === "CHURNED") {
+      await prisma.commission.delete({
+        where: { id: commission.id },
+      });
+      voided++;
+    }
+  }
+
   return NextResponse.json({
-    released: result.count,
-    message: `Released ${result.count} commissions`,
+    checked: pendingCommissions.length,
+    released,
+    voided,
+    message: `Released ${released} commissions, voided ${voided}`,
   });
 }

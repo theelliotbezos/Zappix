@@ -10,8 +10,8 @@ export const dailyAnalyticsFunction = inngest.createFunction(
   {
     id: "analytics-daily",
     name: "Daily Analytics Aggregation",
+    triggers: [{ cron: "0 1 * * *" }], // Run at 1 AM daily
   },
-  { cron: "0 1 * * *" }, // Run at 1 AM daily
   async ({ step }) => {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);

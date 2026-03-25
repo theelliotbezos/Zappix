@@ -14,8 +14,8 @@ export const scheduleStatusFunction = inngest.createFunction(
     id: "status-post",
     name: "Post Scheduled Status",
     retries: MAX_RETRIES,
+    triggers: [{ event: "status/post" }],
   },
-  { event: "status/post" },
   async ({ event, step }) => {
     const { statusId } = event.data as { statusId: string };
 
