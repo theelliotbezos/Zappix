@@ -1,0 +1,649 @@
+// Zappix - Prisma Schema
+// Database: Neon PostgreSQL (serverless)
+// Auth: Clerk (no Account/Session models needed)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+// ── User & Auth ─────────────────────────────────────────
+
+model User {
+  id        String   @id @default(cuid())
+  clerkId   String   @unique
+  email     String   @unique
+  name      String?
+  image     String?
+  phone     String?
+  role      UserRole @default(USER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  subscription   Subscription?
+  whatsappAccounts WhatsAppAccount[]
+  contacts       Contact[]
+  broadcasts     Broadcast[]
+  scheduledStatuses ScheduledStatus[]
+  referralCode   ReferralCode?
+  referrals      Referral[]       @relation("ReferredBy")
+  referredBy     Referral?        @relation("ReferredUser")
+  bankAccount    BankAccount?
+  withdrawals    Withdrawal[]
+  adSlots        AdSlot[]
+  chatbotConfigs ChatbotConfig[]
+  menuBotConfigs MenuBotConfig[]
+  teamMemberships TeamMember[]
+  analyticsSnapshots AnalyticsSnapshot[]
+  blogSubscription BlogSubscriber?
+
+  @@map("users")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+// ── Plans & Subscriptions ───────────────────────────────
+
+model Plan {
+  id                 String   @id @default(cuid())
+  name               String   @unique // Starter, Growth, Business, Scale
+  slug               String   @unique
+  priceMonthly       Int      // in kobo (NGN)
+  priceYearly        Int      // in kobo (NGN) - yearly total
+  paystackPlanCodeMonthly String?
+  paystackPlanCodeYearly  String?
+
+  // Limits (no unlimited - all plans have caps)
+  maxWhatsappAccounts Int
+  maxContacts         Int
+  maxBroadcastsPerMonth Int
+  maxStatusPostsPerMonth Int
+  maxTeamMembers      Int
+  maxAdSlots          Int
+  maxStorageGb        Int
+  analyticsRetentionDays Int
+  hasCsvExport        Boolean @default(false)
+  hasPdfExport        Boolean @default(false)
+  hasApiAccess        Boolean @default(false)
+  chatbotLevel        ChatbotLevel @default(BASIC_MENU)
+  supportLevel        SupportLevel @default(NONE)
+
+  subscriptions Subscription[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("plans")
+}
+
+enum ChatbotLevel {
+  BASIC_MENU
+  FULL_FAQ
+  FULL_LEAD_CAPTURE
+  FULL_ALL_FLOWS
+}
+
+enum SupportLevel {
+  NONE
+  EMAIL
+  EMAIL_WHATSAPP
+  DEDICATED
+}
+
+model Subscription {
+  id                   String             @id @default(cuid())
+  userId               String             @unique
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId               String
+  plan                 Plan               @relation(fields: [planId], references: [id])
+  status               SubscriptionStatus @default(ACTIVE)
+  billingCycle         BillingCycle       @default(MONTHLY)
+  paystackSubscriptionCode String?
+  paystackCustomerCode String?
+  currentPeriodStart   DateTime
+  currentPeriodEnd     DateTime
+  cancelledAt          DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  payments Payment[]
+
+  @@map("subscriptions")
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  TRIALING
+}
+
+enum BillingCycle {
+  MONTHLY
+  YEARLY
+}
+
+model Payment {
+  id                 String        @id @default(cuid())
+  subscriptionId     String
+  subscription       Subscription  @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  amount             Int           // in kobo
+  currency           String        @default("NGN")
+  status             PaymentStatus @default(PENDING)
+  paystackReference  String?       @unique
+  paidAt             DateTime?
+  createdAt          DateTime      @default(now())
+
+  @@map("payments")
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+// ── WhatsApp Accounts ───────────────────────────────────
+
+model WhatsAppAccount {
+  id              String                @id @default(cuid())
+  userId          String
+  user            User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  instanceId      String                @unique // Evolution API instance ID
+  instanceName    String
+  phoneNumber     String?
+  displayName     String?
+  profilePicUrl   String?
+  status          WhatsAppAccountStatus @default(DISCONNECTED)
+  warmUpProgress  Int                   @default(0) // 0-100
+  lastConnectedAt DateTime?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  scheduledStatuses ScheduledStatus[]
+  broadcasts        Broadcast[]
+  contacts          Contact[]
+  adSlots           AdSlot[]
+  chatbotConfig     ChatbotConfig?
+  menuBotConfig     MenuBotConfig?
+
+  @@map("whatsapp_accounts")
+}
+
+enum WhatsAppAccountStatus {
+  CONNECTED
+  DISCONNECTED
+  CONNECTING
+  BANNED
+}
+
+// ── Contacts ────────────────────────────────────────────
+
+model Contact {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId       String
+  account         WhatsAppAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  phoneNumber     String
+  name            String?
+  profilePicUrl   String?
+  isOptedOut      Boolean  @default(false)
+  customFields    Json?    // Flexible key-value pairs
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tags            ContactTag[]
+  lists           ContactListMember[]
+  broadcastRecipients BroadcastRecipient[]
+
+  @@unique([accountId, phoneNumber])
+  @@map("contacts")
+}
+
+model Tag {
+  id        String       @id @default(cuid())
+  name      String
+  color     String       @default("#16A34A")
+  contacts  ContactTag[]
+  createdAt DateTime     @default(now())
+
+  @@map("tags")
+}
+
+model ContactTag {
+  contactId String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tagId     String
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([contactId, tagId])
+  @@map("contact_tags")
+}
+
+model ContactList {
+  id          String              @id @default(cuid())
+  name        String
+  description String?
+  members     ContactListMember[]
+  broadcasts  Broadcast[]
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@map("contact_lists")
+}
+
+model ContactListMember {
+  contactId String
+  contact   Contact     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  listId    String
+  list      ContactList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  addedAt   DateTime    @default(now())
+
+  @@id([contactId, listId])
+  @@map("contact_list_members")
+}
+
+// ── Status Scheduler ────────────────────────────────────
+
+model ScheduledStatus {
+  id          String              @id @default(cuid())
+  userId      String
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId   String
+  account     WhatsAppAccount     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  type        StatusType
+  caption     String?
+  mediaUrl    String?             // Cloudinary URL
+  mediaType   MediaType?
+  scheduledAt DateTime
+  postedAt    DateTime?
+  status      ScheduledStatusState @default(PENDING)
+  errorMessage String?
+  retryCount  Int                 @default(0)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@map("scheduled_statuses")
+}
+
+enum StatusType {
+  TEXT
+  IMAGE
+  VIDEO
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+  DOCUMENT
+  AUDIO
+}
+
+enum ScheduledStatusState {
+  PENDING
+  QUEUED
+  POSTING
+  POSTED
+  FAILED
+}
+
+// ── Broadcast Engine ────────────────────────────────────
+
+model Broadcast {
+  id            String           @id @default(cuid())
+  userId        String
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId     String
+  account       WhatsAppAccount  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  listId        String?
+  list          ContactList?     @relation(fields: [listId], references: [id])
+  name          String
+  messageType   MessageType
+  messageBody   String
+  mediaUrl      String?
+  scheduledAt   DateTime?
+  startedAt     DateTime?
+  completedAt   DateTime?
+  status        BroadcastStatus  @default(DRAFT)
+  totalRecipients Int            @default(0)
+  sentCount     Int              @default(0)
+  deliveredCount Int             @default(0)
+  failedCount   Int              @default(0)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  recipients BroadcastRecipient[]
+
+  @@map("broadcasts")
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  VIDEO
+  DOCUMENT
+  AUDIO
+  CONTACT
+  LOCATION
+}
+
+enum BroadcastStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model BroadcastRecipient {
+  id           String                  @id @default(cuid())
+  broadcastId  String
+  broadcast    Broadcast               @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+  contactId    String
+  contact      Contact                 @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  status       BroadcastRecipientStatus @default(PENDING)
+  sentAt       DateTime?
+  deliveredAt  DateTime?
+  errorMessage String?
+
+  @@unique([broadcastId, contactId])
+  @@map("broadcast_recipients")
+}
+
+enum BroadcastRecipientStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+  OPTED_OUT
+}
+
+// ── Analytics ───────────────────────────────────────────
+
+model AnalyticsSnapshot {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date            DateTime @db.Date
+  statusesPosted  Int      @default(0)
+  broadcastsSent  Int      @default(0)
+  messagesReceived Int     @default(0)
+  contactsGained  Int      @default(0)
+  adRevenue       Int      @default(0) // in kobo
+  createdAt       DateTime @default(now())
+
+  @@unique([userId, date])
+  @@map("analytics_snapshots")
+}
+
+// ── Referral System ─────────────────────────────────────
+
+model ReferralCode {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  code      String   @unique
+  createdAt DateTime @default(now())
+
+  referrals Referral[]
+
+  @@map("referral_codes")
+}
+
+model Referral {
+  id               String         @id @default(cuid())
+  referralCodeId   String
+  referralCode     ReferralCode   @relation(fields: [referralCodeId], references: [id])
+  referrerId       String
+  referrer         User           @relation("ReferredBy", fields: [referrerId], references: [id])
+  referredUserId   String         @unique
+  referredUser     User           @relation("ReferredUser", fields: [referredUserId], references: [id])
+  status           ReferralStatus @default(SIGNED_UP)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  commissions Commission[]
+
+  @@map("referrals")
+}
+
+enum ReferralStatus {
+  SIGNED_UP
+  SUBSCRIBED
+  CHURNED
+}
+
+model Commission {
+  id          String           @id @default(cuid())
+  referralId  String
+  referral    Referral         @relation(fields: [referralId], references: [id], onDelete: Cascade)
+  amount      Int              // in kobo (25% of subscription)
+  status      CommissionStatus @default(PENDING)
+  releasedAt  DateTime?        // After 30-day hold period
+  createdAt   DateTime         @default(now())
+
+  @@map("commissions")
+}
+
+enum CommissionStatus {
+  PENDING    // Within 30-day hold
+  AVAILABLE  // Released, can be withdrawn
+  WITHDRAWN  // Included in a withdrawal
+}
+
+// ── Bank Account & Withdrawals (Paystack Transfers) ─────
+
+model BankAccount {
+  id                     String   @id @default(cuid())
+  userId                 String   @unique
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bankName               String
+  bankCode               String
+  accountNumber          String
+  accountName            String   // Verified via Paystack
+  paystackRecipientCode  String   // For Paystack Transfers
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@map("bank_accounts")
+}
+
+model Withdrawal {
+  id                String           @id @default(cuid())
+  userId            String
+  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount            Int              // in kobo
+  fee               Int              @default(0) // Paystack transfer fee in kobo
+  status            WithdrawalStatus @default(PROCESSING)
+  paystackTransferCode String?
+  paystackReference String?          @unique
+  processedAt       DateTime?
+  failedReason      String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  @@map("withdrawals")
+}
+
+enum WithdrawalStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+  REVERSED
+}
+
+// ── Ad Slots ────────────────────────────────────────────
+
+model AdSlot {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId   String
+  account     WhatsAppAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  price       Int      // in kobo
+  duration    String   // e.g., "24h", "12h"
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  bookings AdBooking[]
+
+  @@map("ad_slots")
+}
+
+model AdBooking {
+  id                String          @id @default(cuid())
+  adSlotId          String
+  adSlot            AdSlot          @relation(fields: [adSlotId], references: [id], onDelete: Cascade)
+  advertiserName    String
+  advertiserEmail   String
+  advertiserPhone   String?
+  mediaUrl          String?
+  caption           String?
+  status            AdBookingStatus @default(PENDING)
+  paystackReference String?         @unique
+  paidAt            DateTime?
+  scheduledFor      DateTime?
+  deliveredAt       DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@map("ad_bookings")
+}
+
+enum AdBookingStatus {
+  PENDING
+  PAID
+  APPROVED
+  REJECTED
+  SCHEDULED
+  DELIVERED
+  CANCELLED
+}
+
+// ── Chatbot & Menu Bot ──────────────────────────────────
+
+model ChatbotConfig {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId   String   @unique
+  account     WhatsAppAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  isActive    Boolean  @default(false)
+  welcomeMessage String?
+  fallbackMessage String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  faqEntries  FaqEntry[]
+  flows       ChatbotFlow[]
+
+  @@map("chatbot_configs")
+}
+
+model FaqEntry {
+  id            String        @id @default(cuid())
+  chatbotId     String
+  chatbot       ChatbotConfig @relation(fields: [chatbotId], references: [id], onDelete: Cascade)
+  question      String
+  answer        String
+  keywords      String[]      // For matching
+  sortOrder     Int           @default(0)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@map("faq_entries")
+}
+
+model ChatbotFlow {
+  id          String        @id @default(cuid())
+  chatbotId   String
+  chatbot     ChatbotConfig @relation(fields: [chatbotId], references: [id], onDelete: Cascade)
+  name        String
+  triggerType FlowTriggerType
+  triggerValue String?
+  flowData    Json           // Flow builder JSON structure
+  isActive    Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@map("chatbot_flows")
+}
+
+enum FlowTriggerType {
+  KEYWORD
+  FIRST_MESSAGE
+  BUTTON_REPLY
+  LIST_REPLY
+}
+
+model MenuBotConfig {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId   String   @unique
+  account     WhatsAppAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  isActive    Boolean  @default(false)
+  menuTree    Json     // Nested menu structure
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("menu_bot_configs")
+}
+
+// ── Team Members ────────────────────────────────────────
+
+model TeamMember {
+  id        String     @id @default(cuid())
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email     String
+  name      String?
+  role      TeamRole   @default(VIEWER)
+  invitedAt DateTime   @default(now())
+  acceptedAt DateTime?
+  status    InviteStatus @default(PENDING)
+
+  @@unique([userId, email])
+  @@map("team_members")
+}
+
+enum TeamRole {
+  OWNER
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+// ── Blog Subscriber ─────────────────────────────────────
+
+model BlogSubscriber {
+  id        String   @id @default(cuid())
+  userId    String?  @unique
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  email     String   @unique
+  name      String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@map("blog_subscribers")
+}
