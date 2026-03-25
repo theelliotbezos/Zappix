@@ -1,85 +1,137 @@
-# ⚡ Zappix — Development Roadmap
+# Zappix
 
-> The Operating System for WhatsApp TV Businesses  
+> The Operating System for WhatsApp TV Businesses
 > Domain: **zappix.ng**
 
 ---
 
-## 📋 Overview
+## Overview
 
-This roadmap is split into **11 phases** across **21 weeks** — from a blank server to a fully launched SaaS product with all 9 features live.
-
-Each phase has its own markdown file with:
-- Exact tasks to complete
-- Code snippets and commands
-- File structures to create
-- Acceptance criteria (how to know the phase is done)
+Zappix is a production-ready SaaS platform built for Nigerian WhatsApp TV businesses. It provides tools for scheduling WhatsApp statuses, sending broadcasts, managing contacts, selling ad slots, building chatbots, and more -- all from a single premium dashboard.
 
 ---
 
-## 🗂️ Phase Files
-
-| File | Phase | Weeks | Milestone |
-|------|-------|-------|-----------|
-| [PHASE-01-foundation.md](./PHASE-01-foundation.md) | Foundation & Infrastructure | 1–2 | Hetzner live, Baileys sends test message |
-| [PHASE-02-auth-billing.md](./PHASE-02-auth-billing.md) | Auth, Onboarding & Billing | 3–4 | Signup → Pay → Dashboard working |
-| [PHASE-03-status-scheduler.md](./PHASE-03-status-scheduler.md) | Status Scheduler | 5–6 | Auto-posting live |
-| [PHASE-04-broadcast-engine.md](./PHASE-04-broadcast-engine.md) | Broadcast Engine | 7–8 | Bulk messaging live |
-| [PHASE-05-analytics.md](./PHASE-05-analytics.md) | Analytics Dashboard | 9 | Data insights live |
-| [PHASE-06-referral-system.md](./PHASE-06-referral-system.md) | Referral System | 10 | Growth engine live |
-| [PHASE-07-contact-manager.md](./PHASE-07-contact-manager.md) | Contact Manager | 12–13 | CRM live |
-| [PHASE-08-multi-account.md](./PHASE-08-multi-account.md) | Multi-Account Manager | 14–15 | Teams & accounts live |
-| [PHASE-09-ad-slot-manager.md](./PHASE-09-ad-slot-manager.md) | Ad Slot Manager | 16–17 | Booking pages & ad delivery live |
-| [PHASE-10-chatbot-builder.md](./PHASE-10-chatbot-builder.md) | Chatbot Builder | 18–19 | Automation live |
-| [PHASE-11-menu-bot.md](./PHASE-11-menu-bot.md) | WhatsApp Menu Bot | 20–21 | Full product live |
-
----
-
-## 🚀 Launch Gates
-
-### v1.0 Public Launch — End of Week 11
-Phases 1–6 complete. Core product live at zappix.ng with:
-- Status Scheduler
-- Broadcast Engine  
-- Analytics Dashboard
-- Referral System
-- Founding member pricing active
-
-### v2.0 Full Product — End of Week 21
-All 11 phases complete. Every feature live.
-
----
-
-## 🛠️ Tech Stack Summary
+## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
 | Framework | Next.js 14 (App Router) + TypeScript |
 | API | tRPC |
-| Database | PostgreSQL 15 (self-hosted on Hetzner) |
+| Database | Neon PostgreSQL (serverless) |
 | ORM | Prisma |
-| Cache/Queues | Redis + BullMQ |
-| WhatsApp | Baileys (@whiskeysockets/baileys) |
-| Auth | NextAuth v5 + Google OAuth |
+| Cache/Queues | Upstash Redis + Inngest |
+| WhatsApp Engine | Evolution API v2 (Railway) |
+| Auth | Clerk |
 | Payments | Paystack |
-| Hosting | Hetzner VPS (CX32 → CX42 → CX52) |
-| Web Server | Nginx + Certbot (Let's Encrypt) |
-| Process Manager | PM2 |
-| CI/CD | GitHub Actions |
+| Referral Payouts | Paystack Transfers (bank) |
 | Email | Resend |
-| Styling | Tailwind CSS + shadcn/ui |
+| Blog | Sanity CMS |
+| Media Storage | Cloudinary |
+| Frontend Hosting | Render |
+| Styling | Tailwind CSS + shadcn/ui + Framer Motion |
 
 ---
 
-## ⚠️ Before You Start
+## Features
 
-1. Register **zappix.ng** domain
-2. Create **Hetzner Cloud** account at hetzner.com
-3. Create **Paystack** account at paystack.com
-4. Create **Google Cloud Console** project for OAuth credentials
-5. Create **Resend** account at resend.com
-6. Create **GitHub** repository for the codebase
-7. Create **Sentry** account for error monitoring
+1. **Status Scheduler** - Schedule and auto-post WhatsApp statuses
+2. **Broadcast Engine** - Send messages to thousands with smart throttling
+3. **Contact Manager** - Import, tag, and segment contacts
+4. **Analytics Dashboard** - Track reach, delivery, growth, and revenue
+5. **Ad Slot Manager** - Create bookable ad slots with Paystack payments
+6. **Chatbot Builder** - Build FAQ bots and auto-responders
+7. **Menu Bot** - Interactive WhatsApp menu system
+8. **Multi-Account Manager** - Manage multiple WhatsApp numbers
+9. **Referral System** - 25% recurring commission with bank payouts
+
+---
+
+## Pricing
+
+| Plan | Monthly | Yearly (per month) | WhatsApp Accounts | Contacts |
+|------|---------|-------------------|-------------------|----------|
+| Starter | N10,000 | N8,300 | 1 | 7,500 |
+| Growth | N25,000 | N20,750 | 3 | 37,500 |
+| Business | N55,000 | N45,650 | 7 | 112,500 |
+| Scale | N100,000 | N83,000 | 15 | 300,000 |
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 18+
+- npm or yarn
+- Accounts on: Neon, Clerk, Railway, Paystack, Resend, Sanity, Cloudinary, Upstash, Inngest
+
+### Installation
+
+```bash
+git clone https://github.com/digimajextensions/Zappix.git
+cd Zappix
+npm install
+cp .env.example .env.local
+# Fill in your environment variables
+```
+
+### Database Setup
+
+```bash
+npx prisma migrate dev --name init
+npx prisma db seed
+```
+
+### Development
+
+```bash
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+### Deployment
+
+See [instructions.md](./instructions.md) for the full deployment guide.
+
+---
+
+## Project Structure
+
+```
+src/
+  app/
+    (marketing)/     # Landing, features, pricing, blog, legal pages
+    (auth)/          # Sign-in, sign-up, onboarding
+    app/             # Protected dashboard pages
+    api/             # tRPC, webhooks, cron, Inngest
+  server/
+    trpc/            # tRPC routers and context
+    evolution/       # Evolution API client library
+    services/        # Paystack, Resend, Sanity, Cloudinary
+    inngest/         # Background job functions
+    middleware/      # Plan limit enforcement
+  lib/               # Prisma, Redis, utils, constants
+  components/
+    marketing/       # Navbar, hero, features, pricing, footer
+    dashboard/       # Sidebar, top navbar, KPI cards
+    shared/          # Logo, loading skeletons, SEO
+    ui/              # shadcn/ui components
+prisma/
+  schema.prisma      # Database schema
+  seed.ts            # Pricing plan seeder
+sanity/
+  schemas/           # Blog CMS schemas
+```
+
+---
+
+## Documentation
+
+- [instructions.md](./instructions.md) - Full deployment guide
+- [flow.md](./flow.md) - Progress tracker
+- [ROADMAP.md](./ROADMAP.md) - Development roadmap
+- [UI-UX-DESIGN-SPEC.md](./UI-UX-DESIGN-SPEC.md) - Design specification
 
 ---
 
