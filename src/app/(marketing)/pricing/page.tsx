@@ -1,5 +1,6 @@
 import { Metadata } from "next";
 import { PricingCards } from "@/components/marketing/pricing-cards";
+import { PricingComparison } from "@/components/marketing/pricing-comparison";
 
 export const metadata: Metadata = {
   title: "Pricing",
@@ -32,11 +33,7 @@ export default function PricingPage() {
           <h2 className="mb-12 text-center text-3xl font-bold">
             Compare Plans
           </h2>
-          <div className="overflow-x-auto">
-            <p className="text-center text-gray-400">
-              Detailed feature comparison table will be implemented here
-            </p>
-          </div>
+          <PricingComparison />
         </div>
       </section>
 
