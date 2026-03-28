@@ -153,6 +153,9 @@
 - [x] Write `flow.md` with progress tracker
 - [x] Update `README.md` to reflect new stack
 - [x] Add `render.yaml` for Render deployment configuration
+- [x] Create multi-stage `Dockerfile` for containerised deployment
+- [x] Create `.dockerignore` to optimise Docker build context
+- [x] Update `instructions.md` with Docker build and run steps
 - [ ] End-to-end testing of all features
 - [ ] Performance optimization (image optimization, bundle analysis, caching)
 - [ ] Deploy to Render with environment variables
@@ -178,9 +181,10 @@
 | Ad Slots | 7 | 0 |
 | Chatbot & Menu Bot | 7 | 1 |
 | Settings & Team | 6 | 1 |
-| Polish & Deploy | 4 | 5 |
-| **Total** | **113** | **14** |
+| Polish & Deploy | 7 | 5 |
+| **Total** | **116** | **14** |
 
 > 89% of the total platform build is complete. Remaining items are primarily
 > deployment tasks requiring service accounts (Railway, Neon, Clerk, Paystack),
 > visual polish (flow builder, animations), and end-to-end testing.
+> A multi-stage Docker image is now available for containerised deployment.
