@@ -183,7 +183,35 @@ The repository includes a `render.yaml` blueprint that automatically configures 
 4. Add ALL environment variables from `.env.example` (filled with real values)
 5. Deploy
 
-### Option B: Manual Configuration
+### Option B: Docker (Recommended for self-hosting)
+
+The repository includes a multi-stage `Dockerfile` that builds an optimised production image:
+
+```bash
+# Build the image (pass real NEXT_PUBLIC_* values as build args)
+docker build \
+  --build-arg NEXT_PUBLIC_APP_URL=https://zappix.ng \
+  --build-arg NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_xxx \
+  --build-arg NEXT_PUBLIC_SANITY_PROJECT_ID=your_project_id \
+  --build-arg NEXT_PUBLIC_SANITY_DATASET=production \
+  -t zappix:latest .
+```
+
+```bash
+# Run the container (inject all server-side env vars at runtime)
+docker run -d \
+  --name zappix \
+  -p 3000:3000 \
+  --env-file .env.local \
+  zappix:latest
+```
+
+The image uses Node 22 Alpine, runs as a non-root user, and exposes port 3000.
+
+You can deploy this image to any container platform (AWS ECS, Google Cloud Run,
+Fly.io, Railway Docker service, DigitalOcean App Platform, etc.).
+
+### Option C: Manual Configuration
 
 1. Go to [render.com](https://render.com) and create a new Web Service
 2. Connect your GitHub repository (digimajextensions/Zappix)
@@ -307,6 +335,8 @@ You can set up an external cron service (e.g., Upstash QStash) to hit this endpo
 | Team invite email not sent | Verify RESEND_API_KEY and domain verification in Resend dashboard |
 | CSV import failing | Check file encoding (UTF-8), ensure phone numbers are valid format |
 | Commission not releasing | Verify Inngest cron job is registered, check commission hold period |
+| Docker build fails | Ensure `--legacy-peer-deps` is handled (the Dockerfile uses `npm ci --legacy-peer-deps`) |
+| Docker container exits immediately | Check logs with `docker logs zappix`; verify all required env vars are set via `--env-file` |
 
 ---
 
